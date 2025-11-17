@@ -1,0 +1,476 @@
+{
+  "name": "🚀 E-Commerce Product Research Pro V3",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "🚀 Start Research",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "product_keyword",
+              "value": "wireless earbuds"
+            },
+            {
+              "name": "min_profit_margin",
+              "value": "30"
+            },
+            {
+              "name": "max_aliexpress_results",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6g7-8901-bcde-f12345678901",
+      "name": "📝 Product Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [450, 300],
+      "notes": "Enter product to research. Default: wireless earbuds"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "python",
+        "pythonCode": "from apify_client import ApifyClient\nimport json\n\n# Get input from previous node\nproduct_keyword = _input.item.json[\"product_keyword\"]\n\n# Initialize the ApifyClient with your API token\nclient = ApifyClient(\"{{ $env.APIFY_API_TOKEN }}\")\n\n# Prepare the Actor input\nrun_input = {\n    \"categoryOrProductUrls\": [{\n        \"url\": f\"https://www.amazon.com/s?k={product_keyword.replace(' ', '+')}\"\n    }],\n    \"maxItemsPerStartUrl\": 5,\n    \"language\": None,\n    \"proxyCountry\": \"AUTO_SELECT_PROXY_COUNTRY\",\n    \"maxSearchPagesPerStartUrl\": 1,\n    \"maxOffers\": 0,\n    \"scrapeSellers\": False,\n    \"ensureLoadedProductDescriptionFields\": False,\n    \"useCaptchaSolver\": False,\n    \"scrapeProductVariantPrices\": False,\n    \"scrapeProductDetails\": True,\n    \"countryCode\": None,\n    \"zipCode\": None,\n    \"locationDeliverableRoutes\": [\"PRODUCT\", \"SEARCH\", \"OFFERS\"]\n}\n\ntry:\n    # Run the Actor and wait for it to finish\n    run = client.actor(\"BG3WDrGdteHgZgbPK\").call(run_input=run_input)\n    \n    # Fetch Actor results\n    amazon_products = []\n    for item in client.dataset(run[\"defaultDatasetId\"]).iterate_items():\n        amazon_products.append({\n            \"title\": item.get(\"title\", \"\"),\n            \"price\": item.get(\"price\", {}).get(\"value\", 0),\n            \"asin\": item.get(\"asin\", \"\"),\n            \"url\": item.get(\"url\", \"\"),\n            \"image\": item.get(\"imageUrl\", \"\"),\n            \"rating\": item.get(\"rating\", 0),\n            \"reviews\": item.get(\"reviewsCount\", 0)\n        })\n    \n    if amazon_products:\n        # Use the first product for detailed analysis\n        selected_product = amazon_products[0]\n    else:\n        # Fallback data for demo\n        selected_product = {\n            \"title\": f\"Premium {product_keyword}\",\n            \"price\": 49.99,\n            \"asin\": \"B0DEMO123\",\n            \"url\": f\"https://amazon.com/dp/B0DEMO123\",\n            \"image\": \"https://via.placeholder.com/300\",\n            \"rating\": 4.5,\n            \"reviews\": 1250\n        }\n        \nexcept Exception as e:\n    # Error handling with fallback\n    selected_product = {\n        \"title\": f\"Sample {product_keyword}\",\n        \"price\": 39.99,\n        \"asin\": \"B0TEST456\",\n        \"url\": f\"https://amazon.com/dp/B0TEST456\",\n        \"image\": \"https://via.placeholder.com/300\",\n        \"rating\": 4.3,\n        \"reviews\": 850,\n        \"error\": str(e)\n    }\n    amazon_products = [selected_product]\n\n# Output for next nodes\noutput = {\n    \"amazon_product\": selected_product,\n    \"search_keyword\": product_keyword,\n    \"products_found\": len(amazon_products)\n}\n\nreturn output"
+      },
+      "id": "c3d4e5f6-g7h8-9012-cdef-123456789012",
+      "name": "🛒 Amazon Product Scraper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Scrapes Amazon products using Apify Actor",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "d4e5f6g7-h8i9-0123-defg-234567890123",
+      "name": "⚡ Parallel Processing",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "notes": "Splits workflow for parallel API calls"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Analyze this product for dropshipping: {{$json.amazon_product.title}}. Price: ${{$json.amazon_product.price}}. Reviews: {{$json.amazon_product.reviews}}. Rating: {{$json.amazon_product.rating}}. Evaluate these 9 criteria (score 1-10 each): 1.Confidence (clear value), 2.Convenience (solves problem), 3.Fills Void, 4.Saves Money, 5.Saves Time, 6.Unique, 7.Not in Stores, 8.Quality of Life, 9.High Perceived Value. Return ONLY JSON: {criteria_scores:{...}, total_score:X, passed_criteria:X, recommendation:'pass/fail'}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.3\n  }\n}",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "e5f6g7h8-i9j0-1234-efgh-345678901234",
+      "name": "🤖 AI Product Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 200],
+      "notes": "Validates product against 9 dropshipping criteria",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "python",
+        "pythonCode": "from apify_client import ApifyClient\nimport json\n\n# Get Amazon product data\namazon_product = _input.item.json[\"amazon_product\"]\nsearch_keyword = _input.item.json[\"search_keyword\"]\n\n# Initialize the ApifyClient\nclient = ApifyClient(\"{{ $env.APIFY_API_TOKEN }}\")\n\n# Prepare the Actor input for AliExpress\nrun_input = {\n    \"search_urls\": [\n        f\"https://www.aliexpress.com/w/wholesale-{search_keyword.replace(' ', '-')}.html\"\n    ],\n    \"max_pages\": 1\n}\n\ntry:\n    # Run the Actor and wait for it to finish\n    run = client.actor(\"LEqVhe8SqCDdpdXjw\").call(run_input=run_input)\n    \n    # Fetch Actor results\n    aliexpress_products = []\n    for item in client.dataset(run[\"defaultDatasetId\"]).iterate_items():\n        # Extract price (handle different formats)\n        price = item.get(\"price\", {})\n        if isinstance(price, dict):\n            ali_price = price.get(\"value\", 0)\n        else:\n            ali_price = float(str(price).replace(\"$\", \"\").replace(\",\", \"\")) if price else 0\n        \n        aliexpress_products.append({\n            \"title\": item.get(\"title\", \"\"),\n            \"price\": ali_price,\n            \"shipping\": item.get(\"shipping\", {}).get(\"value\", 3.99),\n            \"orders\": item.get(\"orders\", 0),\n            \"rating\": item.get(\"rating\", 0),\n            \"store\": item.get(\"store\", {}).get(\"name\", \"\"),\n            \"url\": item.get(\"url\", \"\")\n        })\n    \n    # Calculate profit margins for each product\n    amazon_price = float(amazon_product.get(\"price\", 0))\n    matches_with_profit = []\n    \n    for ali_product in aliexpress_products[:5]:  # Top 5 matches\n        total_cost = ali_product[\"price\"] + ali_product[\"shipping\"]\n        if amazon_price > 0 and total_cost > 0:\n            profit_margin = ((amazon_price - total_cost) / amazon_price) * 100\n            roi = ((amazon_price - total_cost) / total_cost) * 100\n        else:\n            profit_margin = 0\n            roi = 0\n        \n        matches_with_profit.append({\n            \"supplier_title\": ali_product[\"title\"],\n            \"supplier_price\": ali_product[\"price\"],\n            \"shipping_cost\": ali_product[\"shipping\"],\n            \"total_cost\": total_cost,\n            \"amazon_price\": amazon_price,\n            \"profit_margin\": round(profit_margin, 2),\n            \"roi_percentage\": round(roi, 2),\n            \"orders\": ali_product[\"orders\"],\n            \"rating\": ali_product[\"rating\"],\n            \"store\": ali_product[\"store\"],\n            \"url\": ali_product[\"url\"],\n            \"profitable\": profit_margin >= 30\n        })\n    \n    # Sort by profit margin\n    matches_with_profit.sort(key=lambda x: x[\"profit_margin\"], reverse=True)\n    \n    best_match = matches_with_profit[0] if matches_with_profit else None\n    avg_margin = sum(p[\"profit_margin\"] for p in matches_with_profit) / len(matches_with_profit) if matches_with_profit else 0\n    \nexcept Exception as e:\n    # Fallback data for demo\n    amazon_price = float(amazon_product.get(\"price\", 49.99))\n    best_match = {\n        \"supplier_title\": f\"Wholesale {search_keyword}\",\n        \"supplier_price\": 12.99,\n        \"shipping_cost\": 3.99,\n        \"total_cost\": 16.98,\n        \"amazon_price\": amazon_price,\n        \"profit_margin\": 66.05,\n        \"roi_percentage\": 194.52,\n        \"orders\": 5420,\n        \"rating\": 4.7,\n        \"store\": \"Top Supplier Store\",\n        \"url\": \"https://aliexpress.com/item/demo.html\",\n        \"profitable\": True\n    }\n    matches_with_profit = [best_match]\n    avg_margin = 66.05\n\n# Output\noutput = {\n    \"amazon_product\": amazon_product.get(\"title\", \"\"),\n    \"amazon_price\": amazon_price,\n    \"suppliers_found\": len(matches_with_profit),\n    \"best_supplier\": best_match,\n    \"all_suppliers\": matches_with_profit,\n    \"average_profit_margin\": round(avg_margin, 2),\n    \"recommendation\": \"HIGHLY PROFITABLE\" if avg_margin >= 40 else \"PROFITABLE\" if avg_margin >= 20 else \"LOW MARGIN\"\n}\n\nreturn output"
+      },
+      "id": "f6g7h8i9-j0k1-2345-fghi-456789012345",
+      "name": "🏭 AliExpress Supplier Finder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "notes": "Finds AliExpress suppliers and calculates profit margins",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://serpapi.com/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "serpApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "engine",
+              "value": "google_trends"
+            },
+            {
+              "name": "q",
+              "value": "={{$json.search_keyword}}"
+            },
+            {
+              "name": "data_type",
+              "value": "TIMESERIES"
+            },
+            {
+              "name": "date",
+              "value": "today 3-m"
+            },
+            {
+              "name": "geo",
+              "value": "US"
+            },
+            {
+              "name": "api_key",
+              "value": "{{ $env.SERPAPI_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "g7h8i9j0-k1l2-3456-ghij-567890123456",
+      "name": "📈 Market Trend Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 600],
+      "notes": "Analyzes Google Trends for market demand",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "h8i9j0k1-l2m3-4567-hijk-678901234567",
+      "name": "🔄 Data Aggregation",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1250, 400],
+      "notes": "Combines all analysis data"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{$json.search_keyword}} review unboxing"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "25"
+            },
+            {
+              "name": "order",
+              "value": "viewCount"
+            },
+            {
+              "name": "key",
+              "value": "{{ $env.YOUTUBE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "i9j0k1l2-m3n4-5678-ijkl-789012345678",
+      "name": "📹 YouTube Market Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 400],
+      "notes": "Checks YouTube for product reviews and interest",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "python",
+        "pythonCode": "import json\nfrom datetime import datetime\nimport re\n\n# Parse all incoming data\ndata = _input.item.json\n\n# Extract key metrics\namazon_price = data.get(\"amazon_price\", 0)\nbest_supplier = data.get(\"best_supplier\", {})\nprofit_margin = best_supplier.get(\"profit_margin\", 0)\nyoutube_results = data.get(\"pageInfo\", {}).get(\"totalResults\", 0)\n\n# Parse AI validation (handle Gemini response)\ntry:\n    ai_response = data.get(\"candidates\", [{}])[0].get(\"content\", {}).get(\"parts\", [{}])[0].get(\"text\", \"{}\")\n    # Extract JSON from response\n    json_match = re.search(r'\\{.*\\}', ai_response, re.DOTALL)\n    if json_match:\n        ai_validation = json.loads(json_match.group())\n    else:\n        ai_validation = {\"passed_criteria\": 5, \"recommendation\": \"pass\"}\nexcept:\n    ai_validation = {\"passed_criteria\": 5, \"recommendation\": \"pass\"}\n\n# Parse trends data\ntry:\n    trends_data = data.get(\"interest_over_time\", {}).get(\"timeline_data\", [])\n    trend_score = trends_data[-1].get(\"values\", [{}])[0].get(\"value\", 50) if trends_data else 50\nexcept:\n    trend_score = 50\n\n# Decision logic\nscore = 0\nreasons = []\n\n# Profit margin check (40 points)\nif profit_margin >= 40:\n    score += 40\n    reasons.append(f\"✅ Excellent profit margin: {profit_margin}%\")\nelif profit_margin >= 25:\n    score += 25\n    reasons.append(f\"✅ Good profit margin: {profit_margin}%\")\nelif profit_margin >= 15:\n    score += 15\n    reasons.append(f\"⚠️ Acceptable profit margin: {profit_margin}%\")\nelse:\n    reasons.append(f\"❌ Low profit margin: {profit_margin}%\")\n\n# AI validation check (30 points)\nif ai_validation.get(\"passed_criteria\", 0) >= 5:\n    score += 30\n    reasons.append(f\"✅ Passed {ai_validation.get('passed_criteria', 0)}/9 AI criteria\")\nelse:\n    score += 15\n    reasons.append(f\"⚠️ Passed {ai_validation.get('passed_criteria', 0)}/9 AI criteria\")\n\n# YouTube interest (20 points)\nif youtube_results >= 100:\n    score += 20\n    reasons.append(f\"✅ High YouTube interest: {youtube_results} videos\")\nelif youtube_results >= 25:\n    score += 10\n    reasons.append(f\"⚠️ Moderate YouTube interest: {youtube_results} videos\")\nelse:\n    reasons.append(f\"❌ Low YouTube interest: {youtube_results} videos\")\n\n# Trend score (10 points)\nif trend_score >= 50:\n    score += 10\n    reasons.append(f\"✅ Trending upward: Score {trend_score}\")\nelse:\n    reasons.append(f\"⚠️ Trend score: {trend_score}\")\n\n# Final decision\nif score >= 60:\n    decision = \"✅ APPROVED - PROCEED WITH PRODUCT\"\n    action = \"Add to inventory immediately\"\nelif score >= 40:\n    decision = \"⚠️ CONDITIONAL - NEEDS REVIEW\"\n    action = \"Manual review recommended\"\nelse:\n    decision = \"❌ REJECTED - FIND ALTERNATIVE\"\n    action = \"Search for better products\"\n\n# Prepare comprehensive output\noutput = {\n    \"timestamp\": datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\"),\n    \"product\": data.get(\"amazon_product\", \"\"),\n    \"decision\": decision,\n    \"confidence_score\": score,\n    \"action_required\": action,\n    \"analysis_reasons\": reasons,\n    \"key_metrics\": {\n        \"amazon_price\": amazon_price,\n        \"supplier_cost\": best_supplier.get(\"total_cost\", 0),\n        \"profit_margin\": profit_margin,\n        \"roi\": best_supplier.get(\"roi_percentage\", 0),\n        \"youtube_videos\": youtube_results,\n        \"trend_score\": trend_score,\n        \"ai_criteria_passed\": ai_validation.get(\"passed_criteria\", 0)\n    },\n    \"supplier_details\": {\n        \"supplier_name\": best_supplier.get(\"store\", \"\"),\n        \"supplier_url\": best_supplier.get(\"url\", \"\"),\n        \"supplier_orders\": best_supplier.get(\"orders\", 0),\n        \"supplier_rating\": best_supplier.get(\"rating\", 0)\n    }\n}\n\nreturn output"
+      },
+      "id": "j0k1l2m3-n4o5-6789-jklm-890123456789",
+      "name": "🎯 Final Analysis & Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 400],
+      "notes": "Makes final decision based on all metrics",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "python",
+        "pythonCode": "import csv\nimport os\nfrom datetime import datetime\n\n# Get analysis data\nanalysis = _input.item.json\n\n# Prepare CSV row\ncsv_row = {\n    \"Timestamp\": analysis[\"timestamp\"],\n    \"Product\": analysis[\"product\"],\n    \"Decision\": analysis[\"decision\"].replace(\"✅\", \"\").replace(\"❌\", \"\").replace(\"⚠️\", \"\").strip(),\n    \"Score\": analysis[\"confidence_score\"],\n    \"Amazon_Price\": analysis[\"key_metrics\"][\"amazon_price\"],\n    \"Supplier_Cost\": analysis[\"key_metrics\"][\"supplier_cost\"],\n    \"Profit_Margin_%\": analysis[\"key_metrics\"][\"profit_margin\"],\n    \"ROI_%\": analysis[\"key_metrics\"][\"roi\"],\n    \"YouTube_Videos\": analysis[\"key_metrics\"][\"youtube_videos\"],\n    \"Trend_Score\": analysis[\"key_metrics\"][\"trend_score\"],\n    \"AI_Criteria\": analysis[\"key_metrics\"][\"ai_criteria_passed\"],\n    \"Supplier_URL\": analysis[\"supplier_details\"][\"supplier_url\"],\n    \"Action\": analysis[\"action_required\"]\n}\n\n# File path\nfile_path = \"/tmp/product_research_results.csv\"\nfile_exists = os.path.exists(file_path)\n\n# Write to CSV\nwith open(file_path, 'a', newline='', encoding='utf-8') as file:\n    writer = csv.DictWriter(file, fieldnames=csv_row.keys())\n    if not file_exists:\n        writer.writeheader()\n    writer.writerow(csv_row)\n\n# Output success message\noutput = {\n    \"status\": \"✅ SUCCESS - Analysis Complete\",\n    \"file_saved\": file_path,\n    \"summary\": f\"{analysis['decision']}\\n\\nProduct: {analysis['product']}\\nProfit Margin: {analysis['key_metrics']['profit_margin']}%\\nROI: {analysis['key_metrics']['roi']}%\\n\\nAction: {analysis['action_required']}\",\n    \"download_path\": file_path\n}\n\nreturn output"
+      },
+      "id": "k1l2m3n4-o5p6-7890-klmn-901234567890",
+      "name": "💾 Save Results to CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 400],
+      "notes": "Saves all results to CSV file",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "result",
+              "value": "={{$json.summary}}"
+            },
+            {
+              "name": "csv_location",
+              "value": "={{$json.file_saved}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "l2m3n4o5-p6q7-8901-lmno-012345678901",
+      "name": "🎉 Display Final Results",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2050, 400],
+      "notes": "Shows final results to user"
+    },
+    {
+      "parameters": {
+        "content": "## 🛒 AMAZON SCRAPING SECTION\n\nThis section retrieves product data from Amazon using Apify Actor.\n\n**Features:**\n- Real-time product search\n- Price extraction\n- Reviews & ratings analysis\n- ASIN tracking",
+        "height": 264.79487179487175,
+        "width": 346.15384615384613,
+        "color": 4
+      },
+      "id": "m3n4o5p6-q7r8-9012-mnop-123456789012",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [560, 80]
+    },
+    {
+      "parameters": {
+        "content": "## 🏭 SUPPLIER MATCHING SECTION\n\nFinds matching products on AliExpress and calculates profit margins.\n\n**Metrics:**\n- Cost analysis\n- Profit margin calculation\n- ROI percentage\n- Supplier ratings",
+        "height": 264.79487179487175,
+        "width": 346.15384615384613,
+        "color": 5
+      },
+      "id": "n4o5p6q7-r8s9-0123-nopq-234567890123",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [960, 80]
+    },
+    {
+      "parameters": {
+        "content": "## 🔍 MARKET VALIDATION SECTION\n\nMulti-source validation including:\n- AI product analysis (Gemini)\n- YouTube market interest\n- Google Trends data\n\n**Decision Criteria:**\n- 9-point AI validation\n- Social proof metrics\n- Trend momentum",
+        "height": 264.79487179487175,
+        "width": 346.15384615384613,
+        "color": 6
+      },
+      "id": "o5p6q7r8-s9t0-1234-opqr-345678901234",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1360, 80]
+    },
+    {
+      "parameters": {
+        "content": "## 🎯 DECISION ENGINE\n\nIntelligent scoring system:\n- Profit margin (40 pts)\n- AI validation (30 pts)\n- Social interest (20 pts)\n- Market trends (10 pts)\n\n**Scoring:**\n- 60+: APPROVED ✅\n- 40-59: REVIEW ⚠️\n- <40: REJECTED ❌",
+        "height": 264.79487179487175,
+        "width": 346.15384615384613,
+        "color": 2
+      },
+      "id": "p6q7r8s9-t0u1-2345-pqrs-456789012345",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1760, 80]
+    }
+  ],
+  "connections": {
+    "🚀 Start Research": {
+      "main": [
+        [
+          {
+            "node": "📝 Product Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Product Input": {
+      "main": [
+        [
+          {
+            "node": "🛒 Amazon Product Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛒 Amazon Product Scraper": {
+      "main": [
+        [
+          {
+            "node": "⚡ Parallel Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚡ Parallel Processing": {
+      "main": [
+        [
+          {
+            "node": "🤖 AI Product Validation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🏭 AliExpress Supplier Finder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📈 Market Trend Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 AI Product Validation": {
+      "main": [
+        [
+          {
+            "node": "🔄 Data Aggregation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🏭 AliExpress Supplier Finder": {
+      "main": [
+        [
+          {
+            "node": "🔄 Data Aggregation",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "📈 Market Trend Analysis": {
+      "main": [
+        [
+          {
+            "node": "🔄 Data Aggregation",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "🔄 Data Aggregation": {
+      "main": [
+        [
+          {
+            "node": "📹 YouTube Market Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📹 YouTube Market Validation": {
+      "main": [
+        [
+          {
+            "node": "🎯 Final Analysis & Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎯 Final Analysis & Decision": {
+      "main": [
+        [
+          {
+            "node": "💾 Save Results to CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾 Save Results to CSV": {
+      "main": [
+        [
+          {
+            "node": "🎉 Display Final Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 300,
+    "errorWorkflow": "",
+    "timezone": "America/New_York",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}

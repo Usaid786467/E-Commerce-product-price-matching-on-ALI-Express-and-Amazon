@@ -1,0 +1,25 @@
+# API Credentials - Never commit these files!
+API_CREDENTIALS.md
+.env
+credentials.env
+
+# Workflow versions with embedded credentials (use -secure version instead)
+n8n-ecommerce-automation-workflow-v3.json
+WORKFLOW_DOCUMENTATION.md
+
+# N8N specific
+*.backup.json
+
+# Temporary files
+/tmp/
+*.csv
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
