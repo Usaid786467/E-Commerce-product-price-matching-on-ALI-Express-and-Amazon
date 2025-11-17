@@ -1,0 +1,707 @@
+{
+  "name": "E-Commerce Product Research Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "manual-trigger-1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "title": "Product Research Input",
+        "fields": {
+          "values": [
+            {
+              "fieldName": "amazon_url",
+              "fieldType": "string",
+              "requiredField": false,
+              "displayName": "Amazon Product URL"
+            },
+            {
+              "fieldName": "search_term",
+              "fieldType": "string",
+              "requiredField": false,
+              "displayName": "Search Term"
+            },
+            {
+              "fieldName": "category",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "displayName": "Category",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "name": "Electronics",
+                    "value": "electronics"
+                  },
+                  {
+                    "name": "Home",
+                    "value": "home"
+                  },
+                  {
+                    "name": "Beauty",
+                    "value": "beauty"
+                  },
+                  {
+                    "name": "Sports",
+                    "value": "sports"
+                  },
+                  {
+                    "name": "Pets",
+                    "value": "pets"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "form-input-1",
+      "name": "Form Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "notes": "Collect user input for product research"
+    },
+    {
+      "parameters": {
+        "url": "https://api.scraperapi.com/",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "SCRAPER_API_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "url",
+              "value": "={{ $json.amazon_url }}"
+            },
+            {
+              "name": "render",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "retry": {
+            "maxRetries": 3,
+            "retryInterval": 2000
+          }
+        }
+      },
+      "id": "amazon-scraper-1",
+      "name": "Amazon Product Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300],
+      "notes": "Scrape Amazon product data using ScraperAPI"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Amazon HTML and extract product data\nconst html = $input.item.json.body || $input.item.json;\nconst $ = cheerio.load(html);\n\n// Extract product information\nconst productData = {\n  title: $('#productTitle').text().trim() || 'N/A',\n  price: $('#priceblock_ourprice').text().trim() || \n         $('#priceblock_dealprice').text().trim() || \n         $('.a-price .a-offscreen').first().text().trim() || 'N/A',\n  asin: $('input[name=\"ASIN\"]').val() || \n        $('#ASIN').val() || \n        $input.item.json.amazon_url.match(/\\/dp\\/([A-Z0-9]{10})/)?.[1] || 'N/A',\n  main_image: $('#landingImage').attr('src') || \n              $('#imgBlkFront').attr('src') || \n              $('.a-dynamic-image').first().attr('src') || 'N/A',\n  description: $('#productDescription p').text().trim() || \n               $('#feature-bullets').text().trim() || 'N/A',\n  features: [],\n  rating: $('.a-icon-star .a-icon-alt').first().text().trim() || 'N/A',\n  review_count: $('#acrCustomerReviewText').first().text().trim() || 'N/A',\n  category: $input.item.json.category || 'general',\n  search_term: $input.item.json.search_term || '',\n  amazon_url: $input.item.json.amazon_url || '',\n  timestamp: new Date().toISOString()\n};\n\n// Extract features\n$('#feature-bullets li').each((i, elem) => {\n  const feature = $(elem).text().trim();\n  if (feature) productData.features.push(feature);\n});\n\n// Clean price - extract numeric value\nif (productData.price && productData.price !== 'N/A') {\n  const priceMatch = productData.price.match(/[\\d,]+\\.\\d{2}/);\n  productData.price_numeric = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0;\n} else {\n  productData.price_numeric = 0;\n}\n\nreturn productData;"
+      },
+      "id": "parse-amazon-data-1",
+      "name": "Parse Amazon Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "notes": "Extract structured data from Amazon HTML"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.title }}",
+              "operation": "notEqual",
+              "value2": "N/A"
+            },
+            {
+              "value1": "={{ $json.price_numeric }}",
+              "operation": "larger",
+              "value2": "0"
+            }
+          ]
+        }
+      },
+      "id": "validate-amazon-data-1",
+      "name": "Validate Amazon Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "notes": "Check if Amazon data was successfully extracted"
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "YOUR_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Analyze this product for dropshipping potential. Provide a JSON response with scores (0-10) for each criterion:\\n\\nProduct Details:\\nTitle: {{ $json.title }}\\nPrice: ${{ $json.price_numeric }}\\nCategory: {{ $json.category }}\\nDescription: {{ $json.description }}\\nFeatures: {{ $json.features.join(', ') }}\\n\\nEvaluate on these 9 criteria:\\n1. profit_potential: Based on price point ($15-$150 is ideal)\\n2. shipping_feasibility: Light and small items score higher\\n3. brand_risk: Generic/unbranded items score higher\\n4. market_saturation: Less common items score higher\\n5. visual_appeal: Products that look good in photos\\n6. problem_solving: Does it solve a clear problem?\\n7. impulse_buy_factor: Likely to be bought on impulse?\\n8. durability_concerns: Will it break easily?\\n9. seasonal_dependency: Year-round appeal scores higher\\n\\nRespond in this exact JSON format:\\n{\\n  \\\"scores\\\": {\\n    \\\"profit_potential\\\": <0-10>,\\n    \\\"shipping_feasibility\\\": <0-10>,\\n    \\\"brand_risk\\\": <0-10>,\\n    \\\"market_saturation\\\": <0-10>,\\n    \\\"visual_appeal\\\": <0-10>,\\n    \\\"problem_solving\\\": <0-10>,\\n    \\\"impulse_buy_factor\\\": <0-10>,\\n    \\\"durability_concerns\\\": <0-10>,\\n    \\\"seasonal_dependency\\\": <0-10>\\n  },\\n  \\\"total_score\\\": <sum of all scores>,\\n  \\\"average_score\\\": <average>,\\n  \\\"pass_fail\\\": \\\"<PASS if average >= 6, FAIL otherwise>\\\",\\n  \\\"criteria_passed\\\": <number of scores >= 6>,\\n  \\\"reasoning\\\": \\\"<brief explanation>\\\",\\n  \\\"red_flags\\\": [<list of concerns>],\\n  \\\"opportunities\\\": [<list of strengths>]\\n}\"\n    }]\n  }]\n}",
+        "options": {
+          "timeout": 30000,
+          "retry": {
+            "maxRetries": 3,
+            "retryInterval": 2000
+          }
+        }
+      },
+      "id": "gemini-ai-validation-1",
+      "name": "Gemini AI Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 200],
+      "notes": "AI-powered product validation using Gemini"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gemini API response and extract validation data\nconst response = $input.item.json;\n\n// Extract the text response from Gemini\nlet aiAnalysis = {};\n\ntry {\n  // Gemini returns data in candidates[0].content.parts[0].text\n  const textResponse = response.candidates[0].content.parts[0].text;\n  \n  // Extract JSON from the response (remove markdown code blocks if present)\n  const jsonMatch = textResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    aiAnalysis = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in response');\n  }\n} catch (error) {\n  // Fallback if parsing fails\n  aiAnalysis = {\n    scores: {\n      profit_potential: 5,\n      shipping_feasibility: 5,\n      brand_risk: 5,\n      market_saturation: 5,\n      visual_appeal: 5,\n      problem_solving: 5,\n      impulse_buy_factor: 5,\n      durability_concerns: 5,\n      seasonal_dependency: 5\n    },\n    total_score: 45,\n    average_score: 5,\n    pass_fail: 'UNKNOWN',\n    criteria_passed: 0,\n    reasoning: 'Failed to parse AI response: ' + error.message,\n    red_flags: ['AI analysis failed'],\n    opportunities: []\n  };\n}\n\nreturn {\n  ...aiAnalysis,\n  ai_validation_complete: true\n};"
+      },
+      "id": "parse-gemini-response-1",
+      "name": "Parse Gemini Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 200],
+      "notes": "Extract and parse AI validation scores"
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "YOUR_SERPAPI_KEY"
+            },
+            {
+              "name": "engine",
+              "value": "google_trends"
+            },
+            {
+              "name": "q",
+              "value": "={{ $node['Parse Amazon Data'].json.title }}"
+            },
+            {
+              "name": "data_type",
+              "value": "TIMESERIES"
+            },
+            {
+              "name": "date",
+              "value": "today 3-m"
+            },
+            {
+              "name": "geo",
+              "value": "US"
+            },
+            {
+              "name": "cat",
+              "value": "18"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000,
+          "retry": {
+            "maxRetries": 2,
+            "retryInterval": 1500
+          }
+        }
+      },
+      "id": "google-trends-1",
+      "name": "Google Trends Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400],
+      "notes": "Analyze search trends using SerpAPI"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Google Trends data from SerpAPI response\nconst trendsData = $input.item.json;\n\nlet trendAnalysis = {\n  trend_available: false,\n  trend_direction: 'unknown',\n  trend_score: 0,\n  peak_interest: 0,\n  current_interest: 0,\n  average_interest: 0,\n  trend_data: []\n};\n\ntry {\n  if (trendsData.interest_over_time && trendsData.interest_over_time.timeline_data) {\n    const timeline = trendsData.interest_over_time.timeline_data;\n    \n    if (timeline.length > 0) {\n      trendAnalysis.trend_available = true;\n      trendAnalysis.trend_data = timeline;\n      \n      // Extract interest values\n      const values = timeline.map(t => {\n        const extractedValues = t.values || [];\n        return extractedValues.length > 0 ? extractedValues[0].extracted_value || 0 : 0;\n      });\n      \n      // Calculate metrics\n      trendAnalysis.peak_interest = Math.max(...values);\n      trendAnalysis.current_interest = values[values.length - 1] || 0;\n      trendAnalysis.average_interest = values.reduce((a, b) => a + b, 0) / values.length;\n      \n      // Determine trend direction\n      const firstHalf = values.slice(0, Math.floor(values.length / 2));\n      const secondHalf = values.slice(Math.floor(values.length / 2));\n      const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;\n      const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;\n      \n      if (secondAvg > firstAvg * 1.2) {\n        trendAnalysis.trend_direction = 'rising';\n        trendAnalysis.trend_score = 8;\n      } else if (secondAvg > firstAvg * 0.8) {\n        trendAnalysis.trend_direction = 'stable';\n        trendAnalysis.trend_score = 6;\n      } else {\n        trendAnalysis.trend_direction = 'declining';\n        trendAnalysis.trend_score = 3;\n      }\n    }\n  }\n} catch (error) {\n  trendAnalysis.error = error.message;\n}\n\nreturn trendAnalysis;"
+      },
+      "id": "parse-trends-data-1",
+      "name": "Parse Trends Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 400],
+      "notes": "Calculate trend metrics and direction"
+    },
+    {
+      "parameters": {
+        "url": "https://api.apify.com/v2/acts/junglee~aliexpress-scraper/run-sync",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "YOUR_APIFY_API_TOKEN"
+            },
+            {
+              "name": "timeout",
+              "value": "300"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"searchQuery\": \"{{ $node['Parse Amazon Data'].json.title }}\",\n  \"maxItems\": 10,\n  \"startPage\": 1,\n  \"endPage\": 1,\n  \"shipTo\": \"US\",\n  \"sort\": \"LEWI_ORD\",\n  \"proxyConfiguration\": {\n    \"useApifyProxy\": true\n  }\n}",
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "maxRetries": 2,
+            "retryInterval": 3000
+          }
+        }
+      },
+      "id": "aliexpress-scraper-1",
+      "name": "AliExpress Product Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 600],
+      "notes": "Search for matching products on AliExpress using Apify"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AliExpress scraper results from Apify\nconst apifyResponse = $input.item.json;\nconst amazonData = $node['Parse Amazon Data'].json;\n\nlet aliexpressProducts = [];\n\ntry {\n  // Apify returns results in defaultDatasetId - we need to fetch those\n  // For run-sync, results are in the response\n  if (Array.isArray(apifyResponse)) {\n    aliexpressProducts = apifyResponse;\n  } else if (apifyResponse.items && Array.isArray(apifyResponse.items)) {\n    aliexpressProducts = apifyResponse.items;\n  }\n  \n  // Parse and structure AliExpress products\n  const structuredProducts = aliexpressProducts.slice(0, 5).map((product, index) => {\n    // Extract price (handle different formats)\n    let price = 0;\n    if (product.price) {\n      if (typeof product.price === 'object' && product.price.min) {\n        price = parseFloat(product.price.min);\n      } else if (typeof product.price === 'string') {\n        const priceMatch = product.price.match(/[\\d.]+/);\n        price = priceMatch ? parseFloat(priceMatch[0]) : 0;\n      } else {\n        price = parseFloat(product.price);\n      }\n    }\n    \n    return {\n      rank: index + 1,\n      title: product.title || product.productTitle || 'N/A',\n      price: price,\n      original_price: product.originalPrice || price,\n      url: product.productUrl || product.url || 'N/A',\n      image: product.imageUrl || product.thumbnail || 'N/A',\n      orders: product.orders || product.totalOrders || 0,\n      rating: product.rating || product.averageStarRating || 0,\n      reviews: product.reviews || product.totalReviews || 0,\n      shipping_price: product.shipping?.price || 0,\n      seller_name: product.sellerName || product.store?.name || 'N/A',\n      seller_rating: product.sellerRating || 0\n    };\n  });\n  \n  // If we have products, calculate match scores\n  if (structuredProducts.length > 0) {\n    const topMatch = structuredProducts[0];\n    \n    // Calculate profit margin\n    const amazonPrice = amazonData.price_numeric || 0;\n    const aliexpressPrice = topMatch.price + topMatch.shipping_price;\n    const profitMargin = amazonPrice - aliexpressPrice;\n    const profitPercentage = amazonPrice > 0 ? (profitMargin / amazonPrice * 100) : 0;\n    \n    return {\n      aliexpress_matches_found: structuredProducts.length,\n      aliexpress_products: structuredProducts,\n      top_match: topMatch,\n      profit_analysis: {\n        amazon_price: amazonPrice,\n        aliexpress_price: aliexpressPrice,\n        profit_margin: profitMargin,\n        profit_percentage: profitPercentage,\n        viable: profitPercentage >= 30 && profitMargin >= 5\n      },\n      match_confidence: topMatch.orders > 100 ? 'high' : topMatch.orders > 10 ? 'medium' : 'low'\n    };\n  }\n  \n} catch (error) {\n  return {\n    aliexpress_matches_found: 0,\n    aliexpress_products: [],\n    error: error.message,\n    match_confidence: 'none'\n  };\n}\n\nreturn {\n  aliexpress_matches_found: 0,\n  aliexpress_products: [],\n  match_confidence: 'none',\n  error: 'No products found'\n};"
+      },
+      "id": "parse-aliexpress-data-1",
+      "name": "Parse AliExpress Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 600],
+      "notes": "Extract and calculate profit margins from AliExpress results"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "YOUR_YOUTUBE_API_KEY"
+            },
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{ $node['Parse Amazon Data'].json.title }} review unboxing"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "10"
+            },
+            {
+              "name": "order",
+              "value": "relevance"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "retry": {
+            "maxRetries": 2,
+            "retryInterval": 1000
+          }
+        }
+      },
+      "id": "youtube-search-1",
+      "name": "YouTube Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 800],
+      "notes": "Search for product reviews and unboxing videos"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "YOUR_YOUTUBE_API_KEY"
+            },
+            {
+              "name": "part",
+              "value": "statistics"
+            },
+            {
+              "name": "id",
+              "value": "={{ $json.items.map(item => item.id.videoId).join(',') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "youtube-stats-1",
+      "name": "Get YouTube Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 800],
+      "notes": "Fetch video statistics (views, likes)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse YouTube data and calculate validation metrics\nconst searchResults = $node['YouTube Validation'].json;\nconst statsResults = $input.item.json;\n\nlet youtubeAnalysis = {\n  videos_found: 0,\n  total_views: 0,\n  average_views: 0,\n  total_likes: 0,\n  total_comments: 0,\n  video_list: [],\n  validation_score: 0,\n  has_reviews: false\n};\n\ntry {\n  if (searchResults.items && Array.isArray(searchResults.items)) {\n    youtubeAnalysis.videos_found = searchResults.items.length;\n    \n    // Process each video with stats\n    if (statsResults.items && Array.isArray(statsResults.items)) {\n      const videos = searchResults.items.map((searchItem, index) => {\n        const stats = statsResults.items.find(s => s.id === searchItem.id.videoId);\n        \n        return {\n          title: searchItem.snippet.title,\n          channel: searchItem.snippet.channelTitle,\n          video_id: searchItem.id.videoId,\n          url: `https://www.youtube.com/watch?v=${searchItem.id.videoId}`,\n          views: stats ? parseInt(stats.statistics.viewCount || 0) : 0,\n          likes: stats ? parseInt(stats.statistics.likeCount || 0) : 0,\n          comments: stats ? parseInt(stats.statistics.commentCount || 0) : 0\n        };\n      });\n      \n      youtubeAnalysis.video_list = videos;\n      youtubeAnalysis.total_views = videos.reduce((sum, v) => sum + v.views, 0);\n      youtubeAnalysis.average_views = youtubeAnalysis.videos_found > 0 ? \n        youtubeAnalysis.total_views / youtubeAnalysis.videos_found : 0;\n      youtubeAnalysis.total_likes = videos.reduce((sum, v) => sum + v.likes, 0);\n      youtubeAnalysis.total_comments = videos.reduce((sum, v) => sum + v.comments, 0);\n      \n      // Check if there are actual reviews (videos with decent views)\n      youtubeAnalysis.has_reviews = videos.some(v => v.views > 1000);\n      \n      // Calculate validation score\n      if (youtubeAnalysis.videos_found > 5 && youtubeAnalysis.average_views > 10000) {\n        youtubeAnalysis.validation_score = 9;\n      } else if (youtubeAnalysis.videos_found > 3 && youtubeAnalysis.average_views > 5000) {\n        youtubeAnalysis.validation_score = 7;\n      } else if (youtubeAnalysis.videos_found > 0 && youtubeAnalysis.average_views > 1000) {\n        youtubeAnalysis.validation_score = 5;\n      } else {\n        youtubeAnalysis.validation_score = 2;\n      }\n    }\n  }\n} catch (error) {\n  youtubeAnalysis.error = error.message;\n}\n\nreturn youtubeAnalysis;"
+      },
+      "id": "parse-youtube-data-1",
+      "name": "Parse YouTube Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 800],
+      "notes": "Calculate YouTube validation metrics"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-all-data-1",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1850, 400],
+      "notes": "Combine all validation data sources"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final data aggregation and decision logic\nconst amazonData = $node['Parse Amazon Data'].json;\nconst aiValidation = $node['Parse Gemini Response'].json;\nconst trendsData = $node['Parse Trends Data'].json;\nconst aliexpressData = $node['Parse AliExpress Data'].json;\nconst youtubeData = $node['Parse YouTube Data'].json;\n\n// Calculate final scores\nconst scores = {\n  ai_score: aiValidation.average_score || 0,\n  trend_score: trendsData.trend_score || 0,\n  youtube_score: youtubeData.validation_score || 0,\n  profit_score: 0,\n  competition_score: 0\n};\n\n// Calculate profit score (0-10)\nif (aliexpressData.profit_analysis) {\n  const profitPct = aliexpressData.profit_analysis.profit_percentage;\n  if (profitPct >= 50) scores.profit_score = 10;\n  else if (profitPct >= 40) scores.profit_score = 8;\n  else if (profitPct >= 30) scores.profit_score = 6;\n  else if (profitPct >= 20) scores.profit_score = 4;\n  else scores.profit_score = 2;\n}\n\n// Calculate competition score (inverse - lower is better)\nconst videoCount = youtubeData.videos_found || 0;\nif (videoCount < 3) scores.competition_score = 9;\nelse if (videoCount < 10) scores.competition_score = 7;\nelse if (videoCount < 20) scores.competition_score = 5;\nelse scores.competition_score = 3;\n\n// Calculate weighted total score\nconst totalScore = (\n  scores.ai_score * 0.30 +\n  scores.trend_score * 0.20 +\n  scores.youtube_score * 0.15 +\n  scores.profit_score * 0.25 +\n  scores.competition_score * 0.10\n);\n\n// Determine final status\nlet finalStatus = 'FAIL';\nlet statusReason = [];\n\n// Check all criteria\nconst checks = {\n  ai_passed: aiValidation.pass_fail === 'PASS',\n  profit_viable: aliexpressData.profit_analysis?.viable || false,\n  trend_positive: trendsData.trend_direction !== 'declining',\n  has_demand: youtubeData.videos_found > 0,\n  price_range_ok: amazonData.price_numeric >= 15 && amazonData.price_numeric <= 150,\n  matches_found: aliexpressData.aliexpress_matches_found > 0\n};\n\n// Build status reasoning\nif (!checks.ai_passed) statusReason.push('Failed AI validation');\nif (!checks.profit_viable) statusReason.push('Insufficient profit margin');\nif (!checks.trend_positive) statusReason.push('Declining search trend');\nif (!checks.has_demand) statusReason.push('No market validation (YouTube)');\nif (!checks.price_range_ok) statusReason.push('Price outside optimal range');\nif (!checks.matches_found) statusReason.push('No AliExpress suppliers found');\n\n// Pass criteria: Must pass at least 5 out of 6 checks AND total score >= 6\nconst checksPassedCount = Object.values(checks).filter(v => v).length;\nif (checksPassedCount >= 5 && totalScore >= 6) {\n  finalStatus = 'PASS';\n  statusReason = ['Product meets all key criteria'];\n} else if (checksPassedCount >= 4 && totalScore >= 5) {\n  finalStatus = 'REVIEW';\n  statusReason.push('Borderline case - manual review recommended');\n}\n\n// Compile final output\nconst finalOutput = {\n  // Metadata\n  timestamp: new Date().toISOString(),\n  \n  // Amazon data\n  product_name: amazonData.title,\n  amazon_url: amazonData.amazon_url,\n  amazon_asin: amazonData.asin,\n  amazon_price: amazonData.price_numeric,\n  amazon_rating: amazonData.rating,\n  amazon_reviews: amazonData.review_count,\n  category: amazonData.category,\n  \n  // AliExpress data\n  aliexpress_url: aliexpressData.top_match?.url || 'N/A',\n  aliexpress_price: aliexpressData.top_match?.price || 0,\n  aliexpress_shipping: aliexpressData.top_match?.shipping_price || 0,\n  aliexpress_total_cost: (aliexpressData.top_match?.price || 0) + (aliexpressData.top_match?.shipping_price || 0),\n  aliexpress_orders: aliexpressData.top_match?.orders || 0,\n  aliexpress_supplier: aliexpressData.top_match?.seller_name || 'N/A',\n  matches_found: aliexpressData.aliexpress_matches_found,\n  \n  // Profit analysis\n  profit_margin: aliexpressData.profit_analysis?.profit_margin?.toFixed(2) || 0,\n  profit_percentage: aliexpressData.profit_analysis?.profit_percentage?.toFixed(2) || 0,\n  profit_viable: aliexpressData.profit_analysis?.viable ? 'Yes' : 'No',\n  \n  // Trend data\n  trend_direction: trendsData.trend_direction,\n  trend_score: trendsData.trend_score,\n  current_interest: trendsData.current_interest,\n  average_interest: trendsData.average_interest?.toFixed(2) || 0,\n  \n  // YouTube validation\n  youtube_videos: youtubeData.videos_found,\n  youtube_total_views: youtubeData.total_views,\n  youtube_avg_views: Math.round(youtubeData.average_views),\n  has_reviews: youtubeData.has_reviews ? 'Yes' : 'No',\n  \n  // AI scores\n  ai_total_score: aiValidation.total_score || 0,\n  ai_average_score: aiValidation.average_score?.toFixed(2) || 0,\n  ai_pass_fail: aiValidation.pass_fail,\n  criteria_passed: aiValidation.criteria_passed || 0,\n  ai_reasoning: aiValidation.reasoning || 'N/A',\n  \n  // Individual AI criteria scores\n  score_profit_potential: aiValidation.scores?.profit_potential || 0,\n  score_shipping: aiValidation.scores?.shipping_feasibility || 0,\n  score_brand_risk: aiValidation.scores?.brand_risk || 0,\n  score_saturation: aiValidation.scores?.market_saturation || 0,\n  score_visual_appeal: aiValidation.scores?.visual_appeal || 0,\n  score_problem_solving: aiValidation.scores?.problem_solving || 0,\n  score_impulse_buy: aiValidation.scores?.impulse_buy_factor || 0,\n  score_durability: aiValidation.scores?.durability_concerns || 0,\n  score_seasonal: aiValidation.scores?.seasonal_dependency || 0,\n  \n  // Aggregate scores\n  total_score: totalScore.toFixed(2),\n  profit_score: scores.profit_score,\n  competition_score: scores.competition_score,\n  match_confidence: aliexpressData.match_confidence,\n  \n  // Final decision\n  final_status: finalStatus,\n  status_reason: statusReason.join('; '),\n  checks_passed: checksPassedCount,\n  checks_total: 6,\n  \n  // Red flags and opportunities\n  red_flags: (aiValidation.red_flags || []).join('; '),\n  opportunities: (aiValidation.opportunities || []).join('; ')\n};\n\nreturn finalOutput;"
+      },
+      "id": "final-aggregation-1",
+      "name": "Final Aggregation & Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2050, 400],
+      "notes": "Calculate final scores and make pass/fail decision"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate CSV output from final data\nconst data = $input.item.json;\n\n// CSV Header\nconst headers = [\n  'timestamp',\n  'product_name',\n  'amazon_url',\n  'amazon_asin',\n  'amazon_price',\n  'amazon_rating',\n  'amazon_reviews',\n  'category',\n  'aliexpress_url',\n  'aliexpress_price',\n  'aliexpress_shipping',\n  'aliexpress_total_cost',\n  'aliexpress_orders',\n  'aliexpress_supplier',\n  'matches_found',\n  'profit_margin',\n  'profit_percentage',\n  'profit_viable',\n  'trend_direction',\n  'trend_score',\n  'current_interest',\n  'average_interest',\n  'youtube_videos',\n  'youtube_total_views',\n  'youtube_avg_views',\n  'has_reviews',\n  'ai_total_score',\n  'ai_average_score',\n  'ai_pass_fail',\n  'criteria_passed',\n  'score_profit_potential',\n  'score_shipping',\n  'score_brand_risk',\n  'score_saturation',\n  'score_visual_appeal',\n  'score_problem_solving',\n  'score_impulse_buy',\n  'score_durability',\n  'score_seasonal',\n  'total_score',\n  'profit_score',\n  'competition_score',\n  'match_confidence',\n  'final_status',\n  'status_reason',\n  'checks_passed',\n  'checks_total',\n  'red_flags',\n  'opportunities'\n];\n\n// Function to escape CSV values\nfunction escapeCSV(value) {\n  if (value === null || value === undefined) return '';\n  const str = String(value);\n  if (str.includes(',') || str.includes('\"') || str.includes('\\n')) {\n    return '\"' + str.replace(/\"/g, '\"\"') + '\"';\n  }\n  return str;\n}\n\n// Build CSV row\nconst row = headers.map(header => escapeCSV(data[header]));\n\n// Create CSV string\nconst csvContent = headers.join(',') + '\\n' + row.join(',');\n\n// Check if file exists and append\nconst fs = require('fs');\nconst path = '/tmp/product_research_results.csv';\n\ntry {\n  if (!fs.existsSync(path)) {\n    // Create new file with headers\n    fs.writeFileSync(path, csvContent, 'utf8');\n  } else {\n    // Append without headers\n    fs.appendFileSync(path, '\\n' + row.join(','), 'utf8');\n  }\n  \n  return {\n    csv_saved: true,\n    csv_path: path,\n    csv_row: row.join(','),\n    message: 'Results saved to CSV successfully'\n  };\n} catch (error) {\n  return {\n    csv_saved: false,\n    error: error.message,\n    csv_content: csvContent\n  };\n}"
+      },
+      "id": "save-to-csv-1",
+      "name": "Save to CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 400],
+      "notes": "Export results to CSV file"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate detailed HTML report\nconst data = $node['Final Aggregation & Decision'].json;\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <title>Product Research Report</title>\n  <style>\n    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }\n    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n    h1 { color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }\n    h2 { color: #555; margin-top: 30px; border-left: 4px solid #2196F3; padding-left: 10px; }\n    .status { padding: 15px; border-radius: 5px; font-size: 18px; font-weight: bold; margin: 20px 0; }\n    .pass { background: #4CAF50; color: white; }\n    .fail { background: #f44336; color: white; }\n    .review { background: #FF9800; color: white; }\n    .metric { display: inline-block; margin: 10px 20px 10px 0; }\n    .metric-label { font-weight: bold; color: #666; }\n    .metric-value { font-size: 24px; color: #2196F3; }\n    table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }\n    th { background: #2196F3; color: white; }\n    tr:hover { background: #f5f5f5; }\n    .score-high { color: #4CAF50; font-weight: bold; }\n    .score-medium { color: #FF9800; font-weight: bold; }\n    .score-low { color: #f44336; font-weight: bold; }\n    .section { margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 5px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <h1>🔍 Product Research Report</h1>\n    <p><strong>Generated:</strong> ${new Date(data.timestamp).toLocaleString()}</p>\n    \n    <div class=\"status ${data.final_status.toLowerCase()}\">\n      📊 FINAL STATUS: ${data.final_status}\n    </div>\n    \n    <div class=\"section\">\n      <h2>📦 Product Information</h2>\n      <table>\n        <tr><th>Field</th><th>Value</th></tr>\n        <tr><td>Product Name</td><td>${data.product_name}</td></tr>\n        <tr><td>Category</td><td>${data.category}</td></tr>\n        <tr><td>Amazon ASIN</td><td>${data.amazon_asin}</td></tr>\n        <tr><td>Amazon Price</td><td>$${data.amazon_price}</td></tr>\n        <tr><td>Amazon Rating</td><td>${data.amazon_rating} (${data.amazon_reviews} reviews)</td></tr>\n        <tr><td>Amazon URL</td><td><a href=\"${data.amazon_url}\" target=\"_blank\">View Product</a></td></tr>\n      </table>\n    </div>\n    \n    <div class=\"section\">\n      <h2>💰 Profit Analysis</h2>\n      <div class=\"metric\">\n        <div class=\"metric-label\">Profit Margin</div>\n        <div class=\"metric-value ${data.profit_margin > 20 ? 'score-high' : data.profit_margin > 10 ? 'score-medium' : 'score-low'}\">$${data.profit_margin}</div>\n      </div>\n      <div class=\"metric\">\n        <div class=\"metric-label\">Profit %</div>\n        <div class=\"metric-value ${data.profit_percentage > 30 ? 'score-high' : data.profit_percentage > 20 ? 'score-medium' : 'score-low'}\">${data.profit_percentage}%</div>\n      </div>\n      <div class=\"metric\">\n        <div class=\"metric-label\">Viable</div>\n        <div class=\"metric-value\">${data.profit_viable}</div>\n      </div>\n      \n      <table>\n        <tr><th>Source</th><th>Price</th></tr>\n        <tr><td>AliExpress Product</td><td>$${data.aliexpress_price}</td></tr>\n        <tr><td>Shipping Cost</td><td>$${data.aliexpress_shipping}</td></tr>\n        <tr><td><strong>Total Cost</strong></td><td><strong>$${data.aliexpress_total_cost}</strong></td></tr>\n        <tr><td>Amazon Selling Price</td><td>$${data.amazon_price}</td></tr>\n        <tr style=\"background: #e8f5e9;\"><td><strong>Profit Margin</strong></td><td><strong>$${data.profit_margin} (${data.profit_percentage}%)</strong></td></tr>\n      </table>\n      \n      <p><strong>Supplier:</strong> ${data.aliexpress_supplier} | <strong>Orders:</strong> ${data.aliexpress_orders}</p>\n      <p><a href=\"${data.aliexpress_url}\" target=\"_blank\">View AliExpress Product</a></p>\n    </div>\n    \n    <div class=\"section\">\n      <h2>🤖 AI Validation Scores</h2>\n      <div class=\"metric\">\n        <div class=\"metric-label\">Overall AI Score</div>\n        <div class=\"metric-value ${data.ai_average_score > 7 ? 'score-high' : data.ai_average_score > 5 ? 'score-medium' : 'score-low'}\">${data.ai_average_score}/10</div>\n      </div>\n      <div class=\"metric\">\n        <div class=\"metric-label\">Criteria Passed</div>\n        <div class=\"metric-value\">${data.criteria_passed}/9</div>\n      </div>\n      \n      <table>\n        <tr><th>Criterion</th><th>Score</th></tr>\n        <tr><td>Profit Potential</td><td class=\"${data.score_profit_potential > 6 ? 'score-high' : data.score_profit_potential > 4 ? 'score-medium' : 'score-low'}\">${data.score_profit_potential}/10</td></tr>\n        <tr><td>Shipping Feasibility</td><td class=\"${data.score_shipping > 6 ? 'score-high' : data.score_shipping > 4 ? 'score-medium' : 'score-low'}\">${data.score_shipping}/10</td></tr>\n        <tr><td>Brand Risk</td><td class=\"${data.score_brand_risk > 6 ? 'score-high' : data.score_brand_risk > 4 ? 'score-medium' : 'score-low'}\">${data.score_brand_risk}/10</td></tr>\n        <tr><td>Market Saturation</td><td class=\"${data.score_saturation > 6 ? 'score-high' : data.score_saturation > 4 ? 'score-medium' : 'score-low'}\">${data.score_saturation}/10</td></tr>\n        <tr><td>Visual Appeal</td><td class=\"${data.score_visual_appeal > 6 ? 'score-high' : data.score_visual_appeal > 4 ? 'score-medium' : 'score-low'}\">${data.score_visual_appeal}/10</td></tr>\n        <tr><td>Problem Solving</td><td class=\"${data.score_problem_solving > 6 ? 'score-high' : data.score_problem_solving > 4 ? 'score-medium' : 'score-low'}\">${data.score_problem_solving}/10</td></tr>\n        <tr><td>Impulse Buy Factor</td><td class=\"${data.score_impulse_buy > 6 ? 'score-high' : data.score_impulse_buy > 4 ? 'score-medium' : 'score-low'}\">${data.score_impulse_buy}/10</td></tr>\n        <tr><td>Durability Concerns</td><td class=\"${data.score_durability > 6 ? 'score-high' : data.score_durability > 4 ? 'score-medium' : 'score-low'}\">${data.score_durability}/10</td></tr>\n        <tr><td>Seasonal Dependency</td><td class=\"${data.score_seasonal > 6 ? 'score-high' : data.score_seasonal > 4 ? 'score-medium' : 'score-low'}\">${data.score_seasonal}/10</td></tr>\n      </table>\n      \n      <p><strong>AI Reasoning:</strong> ${data.ai_reasoning}</p>\n    </div>\n    \n    <div class=\"section\">\n      <h2>📈 Market Analysis</h2>\n      <table>\n        <tr><th>Metric</th><th>Value</th></tr>\n        <tr><td>Google Trends Direction</td><td>${data.trend_direction}</td></tr>\n        <tr><td>Trend Score</td><td class=\"${data.trend_score > 6 ? 'score-high' : data.trend_score > 4 ? 'score-medium' : 'score-low'}\">${data.trend_score}/10</td></tr>\n        <tr><td>Current Interest</td><td>${data.current_interest}</td></tr>\n        <tr><td>Average Interest (90 days)</td><td>${data.average_interest}</td></tr>\n        <tr><td>YouTube Videos Found</td><td>${data.youtube_videos}</td></tr>\n        <tr><td>Total YouTube Views</td><td>${data.youtube_total_views.toLocaleString()}</td></tr>\n        <tr><td>Average Views per Video</td><td>${data.youtube_avg_views.toLocaleString()}</td></tr>\n        <tr><td>Has Real Reviews</td><td>${data.has_reviews}</td></tr>\n      </table>\n    </div>\n    \n    <div class=\"section\">\n      <h2>🎯 Final Verdict</h2>\n      <table>\n        <tr><th>Metric</th><th>Value</th></tr>\n        <tr><td>Total Score</td><td class=\"${data.total_score > 7 ? 'score-high' : data.total_score > 5 ? 'score-medium' : 'score-low'}\">${data.total_score}/10</td></tr>\n        <tr><td>Checks Passed</td><td>${data.checks_passed}/${data.checks_total}</td></tr>\n        <tr><td>Match Confidence</td><td>${data.match_confidence}</td></tr>\n        <tr><td>Final Status</td><td class=\"${data.final_status.toLowerCase() === 'pass' ? 'score-high' : data.final_status.toLowerCase() === 'review' ? 'score-medium' : 'score-low'}\">${data.final_status}</td></tr>\n      </table>\n      \n      <p><strong>Status Reason:</strong> ${data.status_reason}</p>\n      \n      ${data.red_flags ? `<p><strong>⚠️ Red Flags:</strong> ${data.red_flags}</p>` : ''}\n      ${data.opportunities ? `<p><strong>✅ Opportunities:</strong> ${data.opportunities}</p>` : ''}\n    </div>\n    \n    <div class=\"section\">\n      <h2>📊 Score Breakdown</h2>\n      <ul>\n        <li><strong>AI Score (30%):</strong> ${data.ai_average_score}/10</li>\n        <li><strong>Trend Score (20%):</strong> ${data.trend_score}/10</li>\n        <li><strong>YouTube Score (15%):</strong> ${(data.youtube_videos > 0 ? 7 : 2)}/10</li>\n        <li><strong>Profit Score (25%):</strong> ${data.profit_score}/10</li>\n        <li><strong>Competition Score (10%):</strong> ${data.competition_score}/10</li>\n      </ul>\n      <p><strong>Weighted Total:</strong> ${data.total_score}/10</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nconst fs = require('fs');\nconst reportPath = `/tmp/product_report_${data.amazon_asin}_${Date.now()}.html`;\n\ntry {\n  fs.writeFileSync(reportPath, html, 'utf8');\n  return {\n    report_saved: true,\n    report_path: reportPath,\n    message: 'HTML report generated successfully'\n  };\n} catch (error) {\n  return {\n    report_saved: false,\n    error: error.message,\n    html_content: html\n  };\n}"
+      },
+      "id": "generate-html-report-1",
+      "name": "Generate HTML Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 600],
+      "notes": "Create detailed HTML report with visualizations"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "error_type",
+              "value": "Amazon Data Validation Failed"
+            },
+            {
+              "name": "error_message",
+              "value": "Could not extract valid product data from Amazon URL"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-handler-1",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1050, 500],
+      "notes": "Handle failed Amazon data extraction"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log error to CSV\nconst errorData = $input.item.json;\n\nconst errorRow = [\n  errorData.timestamp || new Date().toISOString(),\n  errorData.error_type || 'Unknown Error',\n  errorData.error_message || 'No details available',\n  errorData.amazon_url || 'N/A',\n  errorData.search_term || 'N/A'\n].map(val => `\"${String(val).replace(/\"/g, '\"\"')}\"`);\n\nconst fs = require('fs');\nconst errorLogPath = '/tmp/product_research_errors.csv';\n\nconst headers = 'timestamp,error_type,error_message,amazon_url,search_term\\n';\nconst row = errorRow.join(',') + '\\n';\n\ntry {\n  if (!fs.existsSync(errorLogPath)) {\n    fs.writeFileSync(errorLogPath, headers + row, 'utf8');\n  } else {\n    fs.appendFileSync(errorLogPath, row, 'utf8');\n  }\n  \n  return {\n    error_logged: true,\n    error_log_path: errorLogPath\n  };\n} catch (error) {\n  return {\n    error_logged: false,\n    log_error: error.message\n  };\n}"
+      },
+      "id": "log-error-1",
+      "name": "Log Error to CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 500],
+      "notes": "Save error details to error log"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Form Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form Input": {
+      "main": [
+        [
+          {
+            "node": "Amazon Product Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Amazon Product Scraper": {
+      "main": [
+        [
+          {
+            "node": "Parse Amazon Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Amazon Data": {
+      "main": [
+        [
+          {
+            "node": "Validate Amazon Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Amazon Data": {
+      "main": [
+        [
+          {
+            "node": "Gemini AI Validation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Trends Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AliExpress Product Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube Validation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini AI Validation": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Trends Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Trends Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Trends Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AliExpress Product Search": {
+      "main": [
+        [
+          {
+            "node": "Parse AliExpress Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AliExpress Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "YouTube Validation": {
+      "main": [
+        [
+          {
+            "node": "Get YouTube Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get YouTube Stats": {
+      "main": [
+        [
+          {
+            "node": "Parse YouTube Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse YouTube Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "Final Aggregation & Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Aggregation & Decision": {
+      "main": [
+        [
+          {
+            "node": "Save to CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Log Error to CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-17T00:00:00.000Z",
+  "versionId": "1"
+}
